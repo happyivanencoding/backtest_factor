@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 import func
-from BacktestEngine import PtfBuilder
+from BacktestEngine import PtfBuilder, build_rolling_periods
 from factor_config import (
     FACTOR_FAMILIES,
     factor_columns,
@@ -1063,6 +1063,47 @@ class TestReconstructionPeriodes(unittest.TestCase):
             'Période totale', 'Depuis 2020',
         ])
         self.assertEqual(combined.loc[1, 'robust_score'], 0.2)
+
+
+class TestFenetresGlissantes(unittest.TestCase):
+    """Vérifie les bornes communes et les métriques des fenêtres glissantes."""
+
+    def test_fenetres_completes_sont_alignees_sur_la_fin_commune(self):
+        periods = build_rolling_periods(
+            '2009-01-01', '2021-12-31', window_months=60, step_months=12,
+        )
+
+        self.assertEqual(len(periods), 9)
+        self.assertEqual(periods[0]['start'], '2009-01-01')
+        self.assertEqual(periods[0]['end'], '2013-12-31')
+        self.assertEqual(periods[-1]['start'], '2017-01-01')
+        self.assertEqual(periods[-1]['end'], '2021-12-31')
+        self.assertTrue(all(
+            period['period_group'] == 'rolling_60m' for period in periods
+        ))
+
+    def test_metrics_locales_contiennent_les_indicateurs_principaux(self):
+        dates = pd.bdate_range('2019-01-01', '2021-12-31')
+        performance = pd.DataFrame({
+            'Top': 100.0 * (1.0005 ** np.arange(len(dates))),
+            'Worst': 100.0 * (0.9998 ** np.arange(len(dates))),
+            'Bench': 100.0 * (1.0002 ** np.arange(len(dates))),
+        }, index=dates)
+        periods = build_rolling_periods(
+            dates.min(), dates.max(), window_months=12, step_months=6,
+        )
+        builder = PtfBuilder.__new__(PtfBuilder)
+
+        metrics = builder._calculate_metrics_for_periods(performance, periods)
+
+        self.assertFalse(metrics.empty)
+        self.assertSetEqual(set(metrics['period_group']), {'rolling_12m'})
+        self.assertTrue(metrics['active_cagr'].notna().all())
+        self.assertTrue(metrics['top_worst_cagr'].notna().all())
+        self.assertTrue(metrics['top_information_ratio'].notna().all())
+        self.assertTrue(metrics['top_max_drawdown'].notna().all())
+        self.assertTrue(metrics['top_tracking_error'].notna().all())
+        self.assertFalse(metrics['robust_score_comparable'].any())
 
 
 class TestComparaisonPerformance(unittest.TestCase):

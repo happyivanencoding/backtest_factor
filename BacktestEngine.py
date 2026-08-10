@@ -56,6 +56,45 @@ def build_periods_from_breakpoints(period_breakpoints):
     return periods
 
 
+def build_rolling_periods(start_date, end_date, window_months, step_months):
+    """Construit des fenêtres calendaires complètes alignées sur la fin commune."""
+    start = pd.Timestamp(start_date).normalize()
+    end = pd.Timestamp(end_date).normalize()
+    if pd.isna(start) or pd.isna(end) or start > end:
+        raise ValueError('La plage commune des fenêtres glissantes est invalide.')
+    if not isinstance(window_months, int) or window_months < 1:
+        raise ValueError('window_months doit être un entier strictement positif.')
+    if not isinstance(step_months, int) or step_months < 1:
+        raise ValueError('step_months doit être un entier strictement positif.')
+
+    periods = []
+    window_end = end
+    while True:
+        window_start = (
+            window_end - relativedelta(months=window_months)
+            + datetime.timedelta(days=1)
+        )
+        if window_start < start:
+            break
+        start_text = window_start.date().isoformat()
+        end_text = window_end.date().isoformat()
+        periods.append({
+            'id': (
+                f'rolling_{window_months}m_'
+                f'{window_start:%Y%m%d}_{window_end:%Y%m%d}'
+            ),
+            'label': f'{window_months} mois | {start_text} → {end_text}',
+            'start': start_text,
+            'end': end_text,
+            'period_group': f'rolling_{window_months}m',
+            'window_months': window_months,
+            'step_months': step_months,
+            'robust_score_comparable': window_months >= 36,
+        })
+        window_end = window_end - relativedelta(months=step_months)
+    return list(reversed(periods))
+
+
 def drop_duplicates_keep_less_missing(screen):
     """
     This function removes duplicate rows based on ISIN and Date, 
@@ -2309,21 +2348,24 @@ class PtfBuilder:
             'information_ratio': information_ratio,
         }
 
-    def _calculate_period_metrics(self, performance, period_breakpoints):
-        """Calcule les métriques de chaque sous-période avec score robuste local."""
-        periods = build_periods_from_breakpoints(period_breakpoints or [])
+    def _calculate_metrics_for_periods(self, performance, periods):
+        """Calcule les métriques locales pour des fenêtres datées explicites."""
         columns = (
             'period_id', 'period_label', 'requested_start_date',
             'requested_end_date', 'actual_start_date', 'actual_end_date',
             'observation_count', 'years', 'top_cagr', 'worst_cagr',
             'bench_cagr', 'active_cagr', 'top_worst_cagr',
             'robust_score', 'top_bench_ratio', 'top_worst_ratio',
+            'period_group', 'window_months', 'step_months',
+            'robust_score_comparable',
         )
+        periods = list(periods or [])
         if performance.empty or not periods:
             return pd.DataFrame(columns=columns)
 
         data = performance.copy().sort_index()
-        data.index = pd.to_datetime(data.index)
+        data.index = pd.to_datetime(data.index, errors='coerce')
+        data = data.loc[data.index.notna()]
         rows = []
 
         def calculate_cagr(series, years):
@@ -2366,6 +2408,12 @@ class PtfBuilder:
                 'robust_score': float('nan'),
                 'top_bench_ratio': float('nan'),
                 'top_worst_ratio': float('nan'),
+                'period_group': period.get('period_group', 'economic'),
+                'window_months': period.get('window_months'),
+                'step_months': period.get('step_months'),
+                'robust_score_comparable': period.get(
+                    'robust_score_comparable', True,
+                ),
             }
             if len(period_data) >= 2:
                 first_date = period_data.index[0]
@@ -2409,6 +2457,11 @@ class PtfBuilder:
                 })
             rows.append(row)
         return pd.DataFrame(rows)
+
+    def _calculate_period_metrics(self, performance, period_breakpoints):
+        """Calcule les métriques des segments créés par les années de rupture."""
+        periods = build_periods_from_breakpoints(period_breakpoints or [])
+        return self._calculate_metrics_for_periods(performance, periods)
 
     def calculate_top_vs_bottom_results(self, builder_bottom, period_breakpoints=None):
         """Calcule les performances et les métriques sans construire de figure."""
