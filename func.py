@@ -958,16 +958,6 @@ def _show_signal_figures(results):
 def _run_parallel_signals(screen, returns, tasks, list_noire_path,
                           backtest_options, worker_count):
     """Exécute les signaux dans plusieurs processus et garde leur ordre."""
-    if backtest_options.get('retain_builders'):
-        raise ValueError(
-            'retain_builders=True n’est pas compatible avec n_jobs > 1. '
-            'Utilisez n_jobs=1 pour ce diagnostic.'
-        )
-    if backtest_options.get('save_path') is not None:
-        raise ValueError(
-            'save_path n’est pas compatible avec plusieurs signaux parallèles. '
-            'Exportez les résultats après le calcul ou utilisez n_jobs=1.'
-        )
 
     execution_options = dict(backtest_options)
     show_plot = bool(execution_options.get('show_plot', True))
@@ -1026,10 +1016,6 @@ def _run_signal_tasks(screen, returns, tasks, list_noire_path,
     """Exécute les signaux séquentiellement ou par processus."""
     if not tasks:
         return []
-    if isinstance(n_jobs, bool) or not isinstance(n_jobs, int):
-        raise TypeError('n_jobs doit être un entier strictement positif.')
-    if n_jobs < 1:
-        raise ValueError('n_jobs doit être supérieur ou égal à 1.')
     worker_count = min(n_jobs, len(tasks))
     if worker_count == 1:
         return _run_sequential_signals(
