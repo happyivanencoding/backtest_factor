@@ -469,6 +469,40 @@ class TestLotsStandardises(unittest.TestCase):
             'composite / Mixte',
         ])
 
+    def test_incremental_calcule_les_scores_dans_la_tache(self):
+        screen = _screen_minimal()
+        original_columns = list(screen.columns)
+
+        def fake_backtest_with_metric(
+                task_screen, returns, metric, list_noire_path,
+                metadata=None, **options):
+            self.assertIn(metric, task_screen.columns)
+            return _fake_backtest(
+                task_screen, returns, metric, list_noire_path,
+                metadata=metadata, **options,
+            )
+
+        with patch.object(
+                func, 'run_top_worst_backtest',
+                side_effect=fake_backtest_with_metric):
+            batch = func.test_incremental_signals(
+                screen,
+                pd.DataFrame(),
+                {'Revenue 5Y CAGR': signal_options(level=1.0)},
+                {'Net Debt to Ebit': signal_options(
+                    higher_is_better=False, diff_1=1.0,
+                )},
+                None,
+                n_jobs=1,
+            )
+
+        self.assertEqual(list(batch['screen'].columns), original_columns)
+        self.assertFalse(any(
+            str(column).startswith('Score_')
+            or str(column).endswith('__diff_1')
+            for column in batch['screen'].columns
+        ))
+
 
 class TestBenchmarkExplicite(unittest.TestCase):
     """Vérifie l'injection directe de la performance du benchmark."""

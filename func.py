@@ -879,6 +879,9 @@ def _run_one_signal(screen, returns, task, list_noire_path, backtest_options):
             screen,
             metric,
             score_specification['signal_config'],
+            keep_derived_columns=score_specification.get(
+                'keep_derived_columns', True,
+            ),
             signals_prepared=score_specification.get(
                 'signals_prepared', False,
             ),
@@ -1127,18 +1130,21 @@ def test_unitary_signals(screen, returns, signal_config, list_noire_path,
 
 def test_incremental_signals(screen, returns, baseline_config, candidate_config,
                              list_noire_path, n_jobs=1, **backtest_options):
-    """Compare une base et ses candidats dans un lot standardisé."""
+    """Compare une base et ses candidats sans conserver les scores temporaires."""
     backtest_options = _ensure_monthly_base_cache(backtest_options)
     baseline_config = _resolve_signal_config(screen, baseline_config)
     results = {}
     tasks = []
     baseline_metric = 'Score_Baseline'
-    working_screen = calculate_composite_score(
-        screen, baseline_metric, baseline_config,
-    )
+    working_screen = screen
     tasks.append({
         'name': 'Baseline',
         'metric': baseline_metric,
+        'score_specification': {
+            'signal_config': baseline_config,
+            'keep_derived_columns': False,
+        },
+        'drop_metric': True,
         'metadata': {
             'test_type': 'incremental_baseline',
             'test_name': 'Baseline',
@@ -1158,12 +1164,14 @@ def test_incremental_signals(screen, returns, baseline_config, candidate_config,
         incremental_config.update(resolved_candidate)
         metric = f'Score_Incremental_{variable}'
         print(f'Test incrémental : {variable}')
-        working_screen = calculate_composite_score(
-            working_screen, metric, incremental_config,
-        )
         tasks.append({
             'name': variable,
             'metric': metric,
+            'score_specification': {
+                'signal_config': incremental_config,
+                'keep_derived_columns': False,
+            },
+            'drop_metric': True,
             'metadata': {
                 'test_type': 'incremental_candidate',
                 'test_name': variable,
