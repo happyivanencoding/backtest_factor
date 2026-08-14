@@ -28,8 +28,11 @@ def _screen_minimal():
             rows.append({
                 'ISIN': isin,
                 'Date': date,
+                'Company SEDOL': isin,
                 ' Benchmark ICB Supersector ': 'Industrials',
                 'Exchange Country Region': 'Europe',
+                'Weight in STOXX EUROPE 600': 1.0,
+                'Benchmark Market Value Millions in EUR ': 100.0,
                 'Revenue 5Y CAGR': security_index + date_index + 1.0,
                 'Net Debt to Ebit': 5.0 - security_index + date_index,
             })
@@ -469,9 +472,10 @@ class TestLotsStandardises(unittest.TestCase):
             'composite / Mixte',
         ])
 
-    def test_incremental_calcule_les_scores_dans_la_tache(self):
+    def test_incremental_prepare_les_scores_avant_le_backtest(self):
         screen = _screen_minimal()
         original_columns = list(screen.columns)
+        captured = {}
 
         def fake_backtest_with_metric(
                 task_screen, returns, metric, list_noire_path,
@@ -482,9 +486,22 @@ class TestLotsStandardises(unittest.TestCase):
                 metadata=metadata, **options,
             )
 
+        real_run_signal_tasks = func._run_signal_tasks
+
+        def inspect_tasks(task_screen, returns, tasks, list_noire_path,
+                          backtest_options, n_jobs):
+            captured['screen_columns'] = list(task_screen.columns)
+            captured['tasks'] = tasks
+            return real_run_signal_tasks(
+                task_screen, returns, tasks, list_noire_path,
+                backtest_options, n_jobs,
+            )
+
         with patch.object(
                 func, 'run_top_worst_backtest',
-                side_effect=fake_backtest_with_metric):
+                side_effect=fake_backtest_with_metric), patch.object(
+                    func, '_run_signal_tasks',
+                    side_effect=inspect_tasks):
             batch = func.test_incremental_signals(
                 screen,
                 pd.DataFrame(),
@@ -496,6 +513,13 @@ class TestLotsStandardises(unittest.TestCase):
                 n_jobs=1,
             )
 
+        self.assertNotIn('Revenue 5Y CAGR', captured['screen_columns'])
+        self.assertNotIn('Net Debt to Ebit', captured['screen_columns'])
+        self.assertTrue(all(
+            'metric_values' in task
+            and 'score_specification' not in task
+            for task in captured['tasks']
+        ))
         self.assertEqual(list(batch['screen'].columns), original_columns)
         self.assertFalse(any(
             str(column).startswith('Score_')

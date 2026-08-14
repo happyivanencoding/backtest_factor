@@ -402,6 +402,39 @@ def _backtest_inputs(screen, returns, metric, bench):
     return slim_screen, slim_returns
 
 
+def _screen_for_backtest_metrics(screen, metric_columns, bench):
+    """Conserve la structure du screen et les scores nécessaires aux backtests."""
+    market_cap_column = 'Benchmark Market Value Millions in EUR '
+    source_market_cap = market_cap_column.rstrip()
+    if market_cap_column in screen.columns:
+        selected_market_cap = market_cap_column
+    elif source_market_cap in screen.columns:
+        selected_market_cap = source_market_cap
+    else:
+        raise KeyError(f'Colonne requise absente : {market_cap_column}')
+
+    weight_column = f'Weight in {bench}'
+    columns = [
+        'Date',
+        'Company SEDOL',
+        ' Benchmark ICB Supersector ',
+        weight_column,
+        selected_market_cap,
+    ]
+    if 'ISIN' in screen.columns:
+        columns.insert(1, 'ISIN')
+    elif screen.index.name != 'ISIN':
+        raise KeyError('Colonne ou index ISIN absent du screen.')
+    columns.extend(metric_columns)
+    columns = list(dict.fromkeys(columns))
+    missing_columns = [column for column in columns if column not in screen.columns]
+    if missing_columns:
+        raise KeyError(
+            f'Colonnes requises absentes pour les scores : {missing_columns}'
+        )
+    return screen.loc[:, columns].copy()
+
+
 def calculate_benchmark_performance(screen, returns, bench=DEFAULT_BENCHMARK,
                                     start_date=DEFAULT_START_DATE):
     """Calcule une fois la performance du benchmark destinée aux autres tests."""
@@ -870,10 +903,17 @@ _WORKER_CONTEXT = None
 
 
 def _run_one_signal(screen, returns, task, list_noire_path, backtest_options):
-    """Calcule éventuellement un score temporaire puis exécute son backtest."""
+    """Ajoute éventuellement un score pré-calculé puis exécute son backtest."""
     metric = task['metric']
     score_specification = task.get('score_specification')
     signal_screen = screen
+    metric_values = task.get('metric_values')
+    if metric_values is not None:
+        if len(metric_values) != len(signal_screen):
+            raise ValueError(
+                f'La longueur du score {metric} ne correspond pas au screen.'
+            )
+        signal_screen[metric] = metric_values
     if score_specification is not None:
         signal_screen = calculate_composite_score(
             screen,
@@ -899,7 +939,10 @@ def _run_one_signal(screen, returns, task, list_noire_path, backtest_options):
             **backtest_options,
         )
     finally:
-        if task.get('drop_metric') and metric in signal_screen.columns:
+        if (
+            (task.get('drop_metric') or metric_values is not None)
+            and metric in signal_screen.columns
+        ):
             signal_screen.drop(columns=[metric], inplace=True)
 
 
@@ -1130,27 +1173,30 @@ def test_unitary_signals(screen, returns, signal_config, list_noire_path,
 
 def test_incremental_signals(screen, returns, baseline_config, candidate_config,
                              list_noire_path, n_jobs=1, **backtest_options):
-    """Compare une base et ses candidats sans conserver les scores temporaires."""
+    """Compare une base et ses candidats après un calcul groupé des scores."""
     backtest_options = _ensure_monthly_base_cache(backtest_options)
     baseline_config = _resolve_signal_config(screen, baseline_config)
     results = {}
     tasks = []
     baseline_metric = 'Score_Baseline'
-    working_screen = screen
+    scored_screen = screen.copy()
+    scored_screen = calculate_composite_score(
+        scored_screen,
+        baseline_metric,
+        baseline_config,
+        keep_derived_columns=False,
+    )
     tasks.append({
         'name': 'Baseline',
         'metric': baseline_metric,
-        'score_specification': {
-            'signal_config': baseline_config,
-            'keep_derived_columns': False,
-        },
-        'drop_metric': True,
+        'metric_values': scored_screen[baseline_metric].to_numpy(copy=True),
         'metadata': {
             'test_type': 'incremental_baseline',
             'test_name': 'Baseline',
             'components': describe_signal_config(baseline_config, role='baseline'),
         },
     })
+    scored_screen.drop(columns=[baseline_metric], inplace=True)
 
     for variable, options in candidate_config.items():
         if variable in baseline_config:
@@ -1164,14 +1210,16 @@ def test_incremental_signals(screen, returns, baseline_config, candidate_config,
         incremental_config.update(resolved_candidate)
         metric = f'Score_Incremental_{variable}'
         print(f'Test incrémental : {variable}')
+        scored_screen = calculate_composite_score(
+            scored_screen,
+            metric,
+            incremental_config,
+            keep_derived_columns=False,
+        )
         tasks.append({
             'name': variable,
             'metric': metric,
-            'score_specification': {
-                'signal_config': incremental_config,
-                'keep_derived_columns': False,
-            },
-            'drop_metric': True,
+            'metric_values': scored_screen[metric].to_numpy(copy=True),
             'metadata': {
                 'test_type': 'incremental_candidate',
                 'test_name': variable,
@@ -1181,9 +1229,16 @@ def test_incremental_signals(screen, returns, baseline_config, candidate_config,
                 ),
             },
         })
+        scored_screen.drop(columns=[metric], inplace=True)
 
+    backtest_screen = _screen_for_backtest_metrics(
+        scored_screen,
+        [],
+        backtest_options.get('bench', DEFAULT_BENCHMARK),
+    )
+    del scored_screen
     task_results = _run_signal_tasks(
-        working_screen,
+        backtest_screen,
         returns,
         tasks,
         list_noire_path,
@@ -1194,7 +1249,7 @@ def test_incremental_signals(screen, returns, baseline_config, candidate_config,
         task['name']: result
         for task, result in zip(tasks, task_results)
     })
-    return {'screen': working_screen, 'results': results}
+    return {'screen': screen, 'results': results}
 
 
 def test_composite_signal(screen, returns, score_col, signal_config,
