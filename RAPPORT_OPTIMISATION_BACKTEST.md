@@ -85,7 +85,7 @@ Le calcul reste effectué avant toute fonction de graphique ou d’export.
 Les mesures avant et après utilisent exactement le même scénario :
 
 - processeur Intel Core i9-13900HX et 64 Go de mémoire ;
-- données réelles `screen_aggregate.parquet` et `returns.parquet` ;
+- données réelles `screen_aggregateCIQ.parquet` et `returns.parquet` ;
 - benchmark `STOXX EUROPE 600`, calculé une fois puis injecté ;
 - période du 1er janvier 2010 à juillet 2026 ;
 - test unitaire de `Revenue 5Y CAGR | level` ;

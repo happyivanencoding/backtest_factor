@@ -87,7 +87,7 @@ performance 仍然在任何绘图或导出函数之前完成计算。
 优化前后的测试使用完全相同的场景：
 
 - Intel Core i9-13900HX，64 GB 内存；
-- 真实数据 `screen_aggregate.parquet` 和 `returns.parquet`；
+- 真实数据 `screen_aggregateCIQ.parquet` 和 `returns.parquet`；
 - benchmark 为 `STOXX EUROPE 600`，只计算一次后显式传入；
 - 2010 年 1 月 1 日至 2026 年 7 月；
 - 单变量测试 `Revenue 5Y CAGR | level`；

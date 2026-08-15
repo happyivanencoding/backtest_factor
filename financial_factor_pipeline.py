@@ -35,7 +35,7 @@ from func import (  # noqa: E402
 
 
 DATA_DIR = PLUGIN_DIR / "data"
-SCREEN_PATH = DATA_DIR / "screen_aggregate.parquet"
+SCREEN_PATH = DATA_DIR / "screen_aggregateCIQ.parquet"
 RETURNS_PATH = DATA_DIR / "returns.parquet"
 DEFAULT_OUTPUT_ROOT = PLUGIN_DIR / "exports" / "financial_sector_research"
 
