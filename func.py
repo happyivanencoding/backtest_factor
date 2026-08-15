@@ -1529,6 +1529,13 @@ def _safe_filename(value):
     return cleaned or 'backtest'
 
 
+def _performance_file_stem(test_path):
+    """Construit un nom de fichier court à partir de l'identifiant unique du test."""
+    # L'identifiant du chemin suffit à distinguer chaque résultat et évite de répéter
+    # le nom du test dans les exports incrémentaux très longs.
+    return _safe_filename(test_path)
+
+
 def _write_tabular(value, path):
     """Écrit une série ou une table sans imposer de format aux autres objets."""
     if isinstance(value, pd.Series):
@@ -1571,7 +1578,7 @@ def _load_saved_performances(export_dir):
             if relative_path:
                 performance_path = export_dir / relative_path
             else:
-                file_stem = _safe_filename(f'{test_path}_{test_name}')
+                file_stem = _performance_file_stem(test_path)
                 performance_path = data_dir / f'{file_stem}_performance.csv'
             if not test_path or not performance_path.exists():
                 continue
@@ -2632,8 +2639,7 @@ def export_backtest_results(results, output_dir, export_name=None, export_png=Tr
 
     for test_path, result in flattened:
         metadata = copy.deepcopy(result.get('metadata', {}))
-        source_test_name = metadata.get('test_name') or metadata.get('metric') or test_path
-        file_stem = _safe_filename(f'{test_path}_{source_test_name}')
+        file_stem = _performance_file_stem(test_path)
         performance_path = data_dir / f'{file_stem}_performance.csv'
         top_holdings_path = holdings_dir / f'{file_stem}_top.csv'
         worst_holdings_path = holdings_dir / f'{file_stem}_worst.csv'

@@ -1066,6 +1066,41 @@ class TestExportCumulatif(unittest.TestCase):
         self.assertFalse(holdings_directory_exists)
         self.assertFalse(figures_directory_exists)
 
+    def test_nom_incremental_long_reste_exportable(self):
+        """Vérifie qu'un chemin incrémental long ne dépasse pas la limite Windows."""
+        test_path = 'incremental / by_family / momentum / rank_diff_12'
+        results = {
+            'incremental': {
+                'by_family': {
+                    'momentum': {
+                        'rank_diff_12': self._resultat(
+                            'incremental_candidate',
+                            'Mom Avg Percentile',
+                            ['Mom Avg Percentile'],
+                            0.2,
+                        ),
+                    },
+                },
+            },
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            export_dir = Path(directory) / 'recherche'
+            func.export_backtest_results(
+                results,
+                directory,
+                export_name='recherche',
+                export_html=False,
+                export_png=False,
+            )
+            performance_files = list((export_dir / 'data').glob('*_performance.csv'))
+
+        self.assertEqual(len(performance_files), 1)
+        self.assertEqual(
+            performance_files[0].name,
+            'incremental_by_family_momentum_rank_diff_12_performance.csv',
+        )
+        self.assertLess(len(str(performance_files[0])), 260)
+
 
 class TestReconstructionPeriodes(unittest.TestCase):
     """Vérifie la réunion de la période totale et des sous-périodes."""
